@@ -26,7 +26,7 @@ Model Conversion (if version mismatch occurs)
 ---------------------------------------------
 If you see "Unsupported model binary version" error, reconvert your model:
 
-    pip install ctranslate2==4.5.0 transformers sentencepiece
+    pip install ctranslate2==4.7.1 transformers sentencepiece
 
     # Convert English → Cebuano model:
     ct2-transformers-converter --model Helsinki-NLP/opus-mt-en-ceb \\
@@ -63,7 +63,7 @@ EN_CEB_MODEL_DIR = os.path.join(_BASE_DIR, "english-cebuano-model")
 CEB_EN_MODEL_DIR = os.path.join(_BASE_DIR, "cebuano-english-model")
 
 # Expected CTranslate2 version - must match the version used to convert models
-EXPECTED_CT2_VERSION = "4.5.0"
+EXPECTED_CT2_VERSION = "4.7.1"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # App & logging
