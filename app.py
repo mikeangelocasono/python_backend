@@ -21,6 +21,23 @@ Quick start
     # 3. run the server
     python app.py                          # development (debug mode)
     waitress-serve --port=5000 app:app     # production (Windows)
+
+Model Conversion (if version mismatch occurs)
+---------------------------------------------
+If you see "Unsupported model binary version" error, reconvert your model:
+
+    pip install ctranslate2==4.5.0 transformers sentencepiece
+
+    # Convert English → Cebuano model:
+    ct2-transformers-converter --model Helsinki-NLP/opus-mt-en-ceb \\
+        --output_dir english-cebuano-model --quantization int8
+
+    # Convert Cebuano → English model:
+    ct2-transformers-converter --model Helsinki-NLP/opus-mt-ceb-en \\
+        --output_dir cebuano-english-model --quantization int8
+
+IMPORTANT: The CTranslate2 version used to convert the model MUST match
+the version installed in production. Pin the exact version in requirements.txt.
 """
 
 import os
@@ -40,9 +57,13 @@ DEBUG_MODE = os.getenv("FLASK_DEBUG", "1") == "1"   # default ON for dev
 
 # Resolve model directories relative to *this* file so the paths work no
 # matter which directory the server is launched from.
+# IMPORTANT: Directory names must NOT contain spaces for Railway deployment.
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-EN_CEB_MODEL_DIR = os.path.join(_BASE_DIR, "english-cebuano model")
-CEB_EN_MODEL_DIR = os.path.join(_BASE_DIR, "cebuano-english model")
+EN_CEB_MODEL_DIR = os.path.join(_BASE_DIR, "english-cebuano-model")
+CEB_EN_MODEL_DIR = os.path.join(_BASE_DIR, "cebuano-english-model")
+
+# Expected CTranslate2 version - must match the version used to convert models
+EXPECTED_CT2_VERSION = "4.5.0"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # App & logging
@@ -57,6 +78,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Version check - log CTranslate2 version on startup
+# ──────────────────────────────────────────────────────────────────────────────
+logger.info("CTranslate2 version: %s (expected: %s)", ctranslate2.__version__, EXPECTED_CT2_VERSION)
+if ctranslate2.__version__ != EXPECTED_CT2_VERSION:
+    logger.warning(
+        "CTranslate2 version mismatch! Installed: %s, Expected: %s. "
+        "This may cause 'binary version' errors if the model was converted with a different version.",
+        ctranslate2.__version__, EXPECTED_CT2_VERSION
+    )
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Load models & tokenizers (once, at import time)
 # ──────────────────────────────────────────────────────────────────────────────
 def _load_sp(path: str) -> spm.SentencePieceProcessor:
@@ -66,18 +98,61 @@ def _load_sp(path: str) -> spm.SentencePieceProcessor:
     return sp
 
 
+def _load_translator_with_version_check(model_dir: str, model_name: str) -> ctranslate2.Translator:
+    """
+    Load a CTranslate2 translator with detailed error handling for version mismatches.
+    
+    If model loading fails due to version mismatch, provides clear instructions
+    on how to reconvert the model using ct2-transformers-converter.
+    """
+    if not os.path.isdir(model_dir):
+        raise RuntimeError(
+            f"Model directory not found: {model_dir}\n"
+            f"Make sure the directory exists and contains model.bin, config.json, and .spm.model files."
+        )
+    
+    model_bin_path = os.path.join(model_dir, "model.bin")
+    if not os.path.isfile(model_bin_path):
+        raise RuntimeError(
+            f"model.bin not found in {model_dir}\n"
+            f"The model may not have been converted yet. Convert using:\n"
+            f"  ct2-transformers-converter --model <huggingface_model> --output_dir {model_dir}"
+        )
+    
+    try:
+        return ctranslate2.Translator(model_dir)
+    except RuntimeError as e:
+        error_msg = str(e)
+        if "binary version" in error_msg.lower() or "unsupported model" in error_msg.lower():
+            raise RuntimeError(
+                f"CTranslate2 model version mismatch for '{model_name}'!\n\n"
+                f"Error: {error_msg}\n\n"
+                f"This means the model was converted with a different CTranslate2 version.\n"
+                f"Current CTranslate2 version: {ctranslate2.__version__}\n\n"
+                f"To fix this, reconvert your model with the SAME version:\n"
+                f"  pip install ctranslate2=={ctranslate2.__version__} transformers sentencepiece\n"
+                f"  ct2-transformers-converter --model Helsinki-NLP/opus-mt-en-ceb --output_dir english-cebuano-model\n"
+                f"  ct2-transformers-converter --model Helsinki-NLP/opus-mt-ceb-en --output_dir cebuano-english-model\n\n"
+                f"Or install the CTranslate2 version that matches your model."
+            ) from e
+        raise
+
+
 try:
     logger.info("Loading English → Cebuano model from: %s", EN_CEB_MODEL_DIR)
-    en_ceb_translator = ctranslate2.Translator(EN_CEB_MODEL_DIR)
+    en_ceb_translator = _load_translator_with_version_check(EN_CEB_MODEL_DIR, "English-Cebuano")
     en_sp   = _load_sp(os.path.join(EN_CEB_MODEL_DIR, "en.spm.model"))   # source tokenizer
     ceb_sp  = _load_sp(os.path.join(EN_CEB_MODEL_DIR, "ceb.spm.model"))  # target tokenizer
 
     logger.info("Loading Cebuano → English model from: %s", CEB_EN_MODEL_DIR)
-    ceb_en_translator = ctranslate2.Translator(CEB_EN_MODEL_DIR)
+    ceb_en_translator = _load_translator_with_version_check(CEB_EN_MODEL_DIR, "Cebuano-English")
     ceb_sp2 = _load_sp(os.path.join(CEB_EN_MODEL_DIR, "ceb.spm.model"))  # source tokenizer
     en_sp2  = _load_sp(os.path.join(CEB_EN_MODEL_DIR, "en.spm.model"))   # target tokenizer
 
     logger.info("All models loaded successfully ✓")
+except RuntimeError as e:
+    logger.error(str(e))
+    raise
 except Exception:
     logger.exception(
         "Failed to load models. Make sure the model directories exist and "

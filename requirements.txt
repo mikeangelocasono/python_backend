@@ -1,5 +1,17 @@
-flask>=3.0,<4
-flask-cors>=4.0,<5
-sentencepiece>=0.2,<1
-ctranslate2>=4.0,<5
-waitress>=3.0,<4
+# Bisaya Translator Backend - Dependencies
+# ==========================================
+# IMPORTANT: ctranslate2 version MUST match the version used to convert the model.
+# If you see a "binary version mismatch" error, reconvert your model using
+# ct2-transformers-converter with this exact CTranslate2 version.
+#
+# To reconvert your OPUS-MT model:
+#   pip install ctranslate2==4.5.0 transformers sentencepiece
+#   ct2-transformers-converter --model Helsinki-NLP/opus-mt-en-ceb --output_dir english-cebuano-model
+#   ct2-transformers-converter --model Helsinki-NLP/opus-mt-ceb-en --output_dir cebuano-english-model
+
+flask==3.0.3
+flask-cors==4.0.1
+sentencepiece==0.2.0
+ctranslate2==4.5.0
+waitress==3.0.0
+gunicorn==21.2.0
