@@ -1,0 +1,5 @@
+flask>=3.0,<4
+flask-cors>=4.0,<5
+sentencepiece>=0.2,<1
+ctranslate2>=4.0,<5
+waitress>=3.0,<4
